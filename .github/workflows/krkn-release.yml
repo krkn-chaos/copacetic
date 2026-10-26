@@ -1,0 +1,49 @@
+name: Krkn Copa release
+
+on:
+  push:
+    tags:
+      - 'krkn-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.repository == 'krkn-chaos/copacetic'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build Linux binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^krkn-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $tag" >&2
+            exit 1
+          fi
+
+          for arch in amd64 arm64; do
+            output_dir="dist/linux_${arch}"
+            mkdir -p "$output_dir"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
+              -ldflags="-s -w -X main.version=${tag}" \
+              -o "$output_dir/copa" .
+            tar -czf "dist/copa_${tag}_linux_${arch}.tar.gz" -C "$output_dir" copa
+          done
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz \
+            --verify-tag \
+            --title "Copacetic $GITHUB_REF_NAME" \
+            --notes "Krkn fork of Copacetic with Fedora 45 RPM support."
